@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Rewrite hyprbars colors from the theme that was just applied, then reload Hyprland.
+set -euo pipefail
+
+COLORS="${HOME}/.local/bin/omawin-theme-colors"
+if [[ -x "$COLORS" ]]; then
+  "$COLORS"
+fi
+
+if command -v hyprctl >/dev/null 2>&1; then
+  hyprctl reload >/dev/null 2>&1 || true
+fi

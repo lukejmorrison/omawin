@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""Minimize/restore Hyprland windows via the Omarchy scratchpad."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+SPECIAL = "special:scratchpad"
+LEGACY_SPECIAL = "special:minimized"
+HIDDEN_WORKSPACES = frozenset({SPECIAL, LEGACY_SPECIAL})
+
+
+def env_or(name: str, fallback: str) -> str:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return fallback
+    return value
+
+
+def state_path() -> Path:
+    home = Path(os.environ.get("HOME") or Path.home())
+    state_home = Path(env_or("XDG_STATE_HOME", str(home / ".local/state")))
+    path = state_home / "omawin"
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "minimized.stack"
+
+
+def hyprctl_json(args: list[str]) -> object | None:
+    try:
+        raw = subprocess.check_output(["hyprctl", *args], text=True)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    raw = raw.strip()
+    if not raw or raw == "Invalid":
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+def dispatch(lua: str) -> None:
+    subprocess.run(["hyprctl", "dispatch", lua], check=False)
+
+
+def workspace_lua(workspace: object) -> str:
+    if isinstance(workspace, int):
+        return str(workspace)
+    name = str(workspace)
+    if name.isdigit():
+        return name
+    return json.dumps(name)
+
+
+def move_window(address: str, workspace: object, follow: bool) -> None:
+    follow_lua = "true" if follow else "false"
+    dispatch(
+        "hl.dsp.window.move({ workspace = %s, follow = %s, window = %s })"
+        % (workspace_lua(workspace), follow_lua, json.dumps(address))
+    )
+
+
+def load_stack() -> list[dict]:
+    path = state_path()
+    if not path.is_file():
+        return []
+    entries: list[dict] = []
+    for line in path.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict) and item.get("address"):
+            entries.append(item)
+    return entries
+
+
+def save_stack(entries: list[dict]) -> None:
+    text = "".join(json.dumps(item) + "\n" for item in entries)
+    state_path().write_text(text)
+
+
+def clients() -> list[dict]:
+    data = hyprctl_json(["clients", "-j"])
+    if not isinstance(data, list):
+        return []
+    return [c for c in data if isinstance(c, dict)]
+
+
+def workspace_name(client: dict) -> str | None:
+    workspace = client.get("workspace") or {}
+    if isinstance(workspace, dict) and workspace.get("name"):
+        return str(workspace["name"])
+    return None
+
+
+def is_minimized(client: dict) -> bool:
+    return workspace_name(client) in HIDDEN_WORKSPACES
+
+
+def regular_workspace(item: dict | None, fallback: object) -> object:
+    if item:
+        name = item.get("workspace_name")
+        if isinstance(name, str) and name and not name.startswith("special:"):
+            return name
+        workspace_id = item.get("workspace_id")
+        if isinstance(workspace_id, int) and workspace_id > 0:
+            return workspace_id
+    return fallback
+
+
+def migrate_legacy() -> None:
+    """Move windows left on the old special:minimized workspace onto the scratchpad."""
+    for client in clients():
+        address = client.get("address")
+        if address and workspace_name(client) == LEGACY_SPECIAL:
+            move_window(address, SPECIAL, follow=False)
+
+
+def minimized(live: list[dict]) -> list[dict]:
+    return [c for c in live if is_minimized(c)]
+
+
+def by_address(live: list[dict], address: str) -> dict | None:
+    for client in live:
+        if client.get("address") == address:
+            return client
+    return None
+
+
+def usage() -> str:
+    return """Usage:
+  omawin-minimize              Hide the active window on special:scratchpad
+  omawin-minimize restore      Restore the last scratchpad window
+  omawin-minimize restore ADDR Restore a window by hyprctl address
+  omawin-minimize list         List scratchpad windows
+  omawin-minimize toggle       Toggle the scratchpad (same as Super+S)
+"""
+
+
+def cmd_minimize() -> int:
+    active = hyprctl_json(["activewindow", "-j"])
+    if not isinstance(active, dict) or not active.get("address"):
+        print("No active window.", file=sys.stderr)
+        return 1
+    if is_minimized(active):
+        print("Window is already on the scratchpad.", file=sys.stderr)
+        return 0
+
+    workspace = active.get("workspace") or {}
+    entry = {
+        "address": active["address"],
+        "workspace_id": workspace.get("id") if isinstance(workspace, dict) else None,
+        "workspace_name": workspace.get("name") if isinstance(workspace, dict) else None,
+        "class": active.get("class"),
+        "title": active.get("title"),
+    }
+    stack = [item for item in load_stack() if item.get("address") != entry["address"]]
+    stack.append(entry)
+    save_stack(stack)
+    move_window(entry["address"], SPECIAL, follow=False)
+    return 0
+
+
+def restore_target(address: str | None) -> tuple[str, object] | None:
+    live = clients()
+    hidden = minimized(live)
+    stack = load_stack()
+
+    if address:
+        client = by_address(hidden, address) or by_address(live, address)
+        if client is None:
+            print(f"No window {address}.", file=sys.stderr)
+            return None
+        origin = next((item for item in reversed(stack) if item.get("address") == address), None)
+        current = hyprctl_json(["activeworkspace", "-j"])
+        fallback: object = 1
+        if isinstance(current, dict):
+            fallback = current.get("name") or current.get("id") or 1
+        return address, regular_workspace(origin, fallback)
+
+    known = {item.get("address") for item in stack}
+    live_hidden_addresses = {c.get("address") for c in hidden}
+
+    for item in reversed(stack):
+        addr = item.get("address")
+        if addr in live_hidden_addresses:
+            return addr, regular_workspace(item, 1)
+
+    if hidden:
+        client = hidden[-1]
+        origin = next((item for item in reversed(stack) if item.get("address") == client.get("address")), None)
+        return client["address"], regular_workspace(origin, 1)
+
+    stale = [item for item in stack if item.get("address") in known]
+    if stale:
+        save_stack([])
+    print("No scratchpad windows.", file=sys.stderr)
+    return None
+
+
+def cmd_restore(address: str | None) -> int:
+    target = restore_target(address)
+    if target is None:
+        return 1
+    addr, workspace = target
+    move_window(addr, workspace, follow=True)
+    stack = [item for item in load_stack() if item.get("address") != addr]
+    save_stack(stack)
+    return 0
+
+
+def cmd_list() -> int:
+    hidden = minimized(clients())
+    if not hidden:
+        print("No scratchpad windows.")
+        return 0
+    for client in hidden:
+        address = client.get("address", "")
+        workspace = (client.get("workspace") or {}).get("name", "")
+        klass = client.get("class", "")
+        title = client.get("title", "")
+        print(f"{address}\t{workspace}\t{klass}\t{title}")
+    return 0
+
+
+def cmd_toggle() -> int:
+    dispatch('hl.dsp.workspace.toggle_special("scratchpad")')
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if argv and argv[0] in {"-h", "--help", "help"}:
+        print(usage(), end="")
+        return 0
+    migrate_legacy()
+    if not argv:
+        return cmd_minimize()
+    command = argv[0]
+    if command == "list":
+        return cmd_list()
+    if command in {"toggle", "show"}:
+        return cmd_toggle()
+    if command == "restore":
+        address = argv[1] if len(argv) > 1 else None
+        return cmd_restore(address)
+    if command.startswith("0x") or command.startswith("address:"):
+        return cmd_restore(command)
+    print(usage(), end="", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
