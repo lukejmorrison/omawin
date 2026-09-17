@@ -83,7 +83,7 @@ Bar background comes from the theme `background`. Title text comes from `foregro
 
 ## Client-side decorations
 
-Apps that draw their own header (Chromium/Brave, Nautilus, some GTK/Qt apps) may still show that header **in addition to** hyprbars. The compositor cannot remove CSD. Prefer Super+T float on terminals and other SSD apps if a double header bothers you.
+Apps that draw their own header (Chromium/Brave/Firefox, Nautilus, Signal, Discord, Slack) keep that header. omawin turns **hyprbars off** for those so you do not get two stacked title bars. Terminals and other SSD apps still get **– □ ×**.
 
 ## Update
 

@@ -1,6 +1,7 @@
 -- omawin titlebar: Windows 7-style hyprbars (glass min/max, red close).
 -- Focused chrome is opaque; unfocused chrome is transparent, like the Omarchy bar.
--- Client-side decorations (browsers, some GTK/Qt apps) may still show their own header.
+-- Browsers and other CSD apps keep their own header; hyprbars is disabled there
+-- so two title bars do not stack (hyprbars:no_bar).
 
 local function env_or(name, fallback)
   local value = os.getenv(name)
@@ -165,17 +166,20 @@ if hl.plugin.hyprbars ~= nil then
     plugin = {
       hyprbars = {
         enabled = true,
-        bar_height = 30,
+        -- 28*1.25=35 physical px on LVDS-1. 30 was 37.5 and the title
+        -- glyphs were bilinear-filtered in both opaque and transparent chrome.
+        bar_height = 28,
         bar_title_enabled = true,
+        -- 12*1.25=15 physical px (integer). Do not use 13/14 at this scale.
         bar_text_size = 12,
         bar_text_font = "JetBrainsMono Nerd Font",
         bar_text_align = "left",
         bar_buttons_alignment = "right",
         bar_part_of_window = true,
         bar_precedence_over_border = true,
-        -- Match the vertical gap: (bar_height 30 - button 22) / 2 = 4,
+        -- Match the vertical gap: (bar_height 28 - button 20) / 2 = 4,
         -- so the close circle is the same distance from the top border
-        -- and the right border.
+        -- and the right border. 20*1.25=25, 4*1.25=5.
         bar_padding = 4,
         bar_button_padding = 0,
         icon_on_hover = false,
@@ -192,21 +196,21 @@ if hl.plugin.hyprbars ~= nil then
   hl.plugin.hyprbars.add_button({
     bg_color = aero.close_bg,
     fg_color = aero.close_fg,
-    size = 22,
+    size = 20,
     icon = "×",
     action = close_window,
   })
   hl.plugin.hyprbars.add_button({
     bg_color = aero.caption_bg,
     fg_color = aero.caption_fg,
-    size = 22,
+    size = 20,
     icon = "□",
     action = maximize_toggle,
   })
   hl.plugin.hyprbars.add_button({
     bg_color = aero.caption_bg,
     fg_color = aero.caption_fg,
-    size = 22,
+    size = 20,
     icon = "–",
     action = scratchpad_send,
   })
@@ -245,6 +249,22 @@ if hl.plugin.hyprbars ~= nil then
       border_size = 4,
     }),
   }
+
+  -- CSD apps already draw a caption. hyprbars on top of that is a second bar
+  -- that sits as an overlay on the toolkit header (obvious with two windows).
+  -- Plugin effect is hyprbars:no_bar; value must be a truthy string.
+  o.window({ tag = "chromium-based-browser" }, { ["hyprbars:no_bar"] = "1" })
+  o.window({ tag = "firefox-based-browser" }, { ["hyprbars:no_bar"] = "1" })
+  o.window(
+    "^(chromium|google-chrome.*|[Bb]rave-browser|microsoft-edge|Vivaldi-stable|helium|chrome-.+)$",
+    { ["hyprbars:no_bar"] = "1" }
+  )
+  o.window("([fF]irefox|zen|librewolf)", { ["hyprbars:no_bar"] = "1" })
+  o.window("^(org\\.gnome\\.)?[Nn]autilus$", { ["hyprbars:no_bar"] = "1" })
+  o.window(
+    "^(signal|Signal|discord|Discord|slack|Slack|telegram-desktop|org\\.telegram\\.desktop)$",
+    { ["hyprbars:no_bar"] = "1" }
+  )
 end
 
 -- hyprland-plugins#543: a dummy tag change forces hyprbars to re-run rules.
