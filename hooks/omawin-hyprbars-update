@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Rebuild hyprbars after Omarchy/Hyprland package updates.
+# Rebuild hyprbars after an Omarchy update and require the running compositor to attach it.
 set -euo pipefail
 
-if ! command -v hyprpm >/dev/null 2>&1; then
-  exit 0
+ENSURE="${HOME}/.local/bin/omawin-ensure-hyprbars"
+if [[ ! -x "$ENSURE" ]]; then
+  printf 'omawin: %s is missing. Run setup.sh again.\n' "$ENSURE" >&2
+  exit 1
 fi
 
-hyprpm update >/dev/null 2>&1 || true
-hyprpm reload -n >/dev/null 2>&1 || true
+"$ENSURE"

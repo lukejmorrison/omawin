@@ -120,12 +120,6 @@ install_hyprbars() {
 
   install_build_deps || return 1
 
-  printf '\nUpdating Hyprland plugin headers (hyprpm update)…\n'
-  if ! hyprpm update; then
-    printf '%s\n' 'hyprpm update failed. Run this in a terminal: hyprpm update'
-    return 1
-  fi
-
   local list
   list=$(hyprpm list 2>/dev/null || true)
   if [[ "$list" != *"Repository hyprland-plugins"* ]]; then
@@ -138,15 +132,18 @@ install_hyprbars() {
     list=$(hyprpm list 2>/dev/null || true)
   fi
 
+  # Record ownership before ensure enables the plugin, so uninstall does not
+  # disable a hyprbars the user had already turned on.
   local enabled
   enabled=$(printf '%s\n' "$list" | python3 "$HYPRPM_STATUS")
   if [[ "$enabled" != "true" ]]; then
-    printf 'Enabling the official hyprbars plugin…\n'
-    hyprpm enable hyprbars
     : > "$STATE_DIR/hyprbars.enabled"
   fi
 
-  hyprpm reload -n >/dev/null 2>&1 || true
+  printf '\nLoading hyprbars and checking that Hyprland attached it…\n'
+  if ! "$PROJECT_DIR/lib/ensure-hyprbars.sh"; then
+    return 1
+  fi
   HYPRBARS_READY=true
 }
 
@@ -221,6 +218,10 @@ cp "$PACKAGED_OVERLAY" "$OVERLAY"
 
 install -m 755 "$PROJECT_DIR/lib/omawin-minimize" "$LOCAL_BIN/omawin-minimize"
 install -m 755 "$PROJECT_DIR/lib/omawin-theme-colors" "$LOCAL_BIN/omawin-theme-colors"
+install -m 755 "$PROJECT_DIR/lib/ensure-hyprbars.sh" "$LOCAL_BIN/omawin-ensure-hyprbars"
+mkdir -p "${HOME}/.local/lib/omawin"
+install -m 644 "$PROJECT_DIR/lib/hyprbars_abi.py" "${HOME}/.local/lib/omawin/hyprbars_abi.py"
+install -m 644 "$PROJECT_DIR/lib/hyprpm_status.py" "${HOME}/.local/lib/omawin/hyprpm_status.py"
 "$LOCAL_BIN/omawin-theme-colors"
 
 if ! has_exact_line "$HYPRLAND_CONFIG" "$LOADER"; then
@@ -251,9 +252,10 @@ if [[ "$HYPRBARS_READY" != true ]]; then
   printf '%s\n' '  hyprpm add https://github.com/hyprwm/hyprland-plugins'
   printf '%s\n' '  hyprpm enable hyprbars'
   printf '%s\n' '  hyprpm reload -n'
-  printf '%s\n' 'Then log out of Omarchy and sign in again once.'
+  printf '%s\n' 'Or run: ~/.local/bin/omawin-ensure-hyprbars'
+  printf '%s\n' 'That checks hyprctl plugin list and rebuilds stale plugin headers.'
 else
-  printf '\n%s\n' 'Log out of Omarchy and sign in again once so hyprbars is loaded from the start.'
+  printf '\n%s\n' 'hyprbars is loaded in this session. Super+T floats a window and shows the title bar.'
 fi
 
 printf '\n%s\n' 'hyprctl configerrors:'

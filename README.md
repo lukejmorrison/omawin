@@ -45,15 +45,13 @@ cd ~/dev/omawin
 
 Use `./setup.sh --yes` to skip the confirmation prompt.
 
-Building hyprbars can take a few minutes the first time. When it finishes, **log out of Omarchy and sign in once** so hyprbars is loaded from the start of the session.
+Building hyprbars can take a few minutes the first time. Setup finishes by checking `hyprctl plugin list`. `hyprpm list` can say hyprbars is enabled when the running compositor never attached it. If the cached headers were built against a different library ABI than this Hyprland, setup deletes `/var/cache/hyprpm/$USER/headersRoot` and builds them again.
 
 If setup skipped the plugin because sudo could not prompt (for example a non-interactive agent run), finish it in a terminal:
 
 ```bash
 ~/dev/omawin/lib/install-hyprbars.sh
 ```
-
-That script now runs `hyprpm update` first so plugin headers match this Hyprland build, then adds and enables hyprbars. If you see `Headers outdated, please run hyprpm update`, re-run the script (or `hyprpm update` then the script).
 
 ## Everyday controls
 
@@ -93,14 +91,15 @@ git pull --ff-only   # if this directory is a git checkout
 ./setup.sh
 ```
 
-A `post-update` hook runs `hyprpm update` after `omarchy update` so hyprbars is rebuilt for a new Hyprland. If a plugin fails to load after an update, run that in a terminal (sudo may be required):
+A `post-update` hook runs `omawin-ensure-hyprbars` after `omarchy update`. It refreshes plugin headers, reloads hyprbars, and requires `hyprctl plugin list` to show hyprbars. If the header ABI does not match the running compositor, it clears the hyprpm header cache and builds again.
+
+If the hook says hyprbars did not load, run this in a terminal (sudo may be required):
 
 ```bash
-hyprpm update
-hyprpm reload -n
+~/.local/bin/omawin-ensure-hyprbars
 ```
 
-Then log out and back in.
+Log out and back in if a floated window still has no title bar.
 
 ## Remove
 
@@ -133,8 +132,9 @@ This removes only omawin files and marked config blocks. It disables hyprbars if
 | `~/.config/hypr/titlebar-colors.lua` | generated theme colors |
 | `~/.config/hypr/hyprland.lua` | marked `require("hypr.titlebar")` |
 | `~/.config/hypr/autostart.lua` | marked `hyprpm reload -n` |
-| `~/.local/bin/omawin-minimize` | hide / restore / list / toggle |
+| `~/.local/bin/omawin-minimize` | hide / restore / list / toggle. The title-bar **–** and Super+M call this so the origin workspace is saved |
+| `~/.local/bin/omawin-ensure-hyprbars` | rebuild hyprbars, repair a stale header ABI, and require it to be loaded |
 | `~/.config/omarchy/plugins/rob.scratchpad/` | bar **S** occupancy indicator |
 | `~/.local/bin/omawin-theme-colors` | rewrite titlebar colors from the current theme |
 | `~/.config/omarchy/hooks/theme-set.d/omawin-titlebar` | theme-set rewrite + reload |
-| `~/.config/omarchy/hooks/post-update.d/omawin-hyprbars-update` | rebuild plugin after Omarchy updates |
+| `~/.config/omarchy/hooks/post-update.d/omawin-hyprbars-update` | rebuild hyprbars after Omarchy updates and require it to load |

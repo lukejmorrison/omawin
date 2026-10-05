@@ -1,5 +1,6 @@
 -- omawin titlebar: Windows 7-style hyprbars (glass min/max, red close).
 -- Focused chrome is opaque; unfocused chrome is transparent, like the Omarchy bar.
+-- Title bars are for floating windows. Tiled windows keep the theme border.
 -- Browsers and other CSD apps keep their own header; hyprbars is disabled there
 -- so two title bars do not stack (hyprbars:no_bar).
 
@@ -15,6 +16,14 @@ local home = os.getenv("HOME") or ""
 local config_home = env_or("XDG_CONFIG_HOME", home .. "/.config")
 local state_home = env_or("XDG_STATE_HOME", home .. "/.local/state")
 local minimize_bin = home .. "/.local/bin/omawin-minimize"
+
+local function lua_quote(value)
+  return string.format("%q", value)
+end
+
+local function shell_single_quote(value)
+  return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
+end
 
 local function is_theme_color(value)
   if type(value) ~= "string" then
@@ -136,11 +145,11 @@ end
 local maximize_toggle =
   [[hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" })']]
 local close_window = [[hyprctl dispatch 'hl.dsp.window.close()']]
--- Super+Alt+S. hyprbars focuses this window, then execs the action via spawn().
--- A raw helper path does not run reliably from hyprbars; close/maximize already
--- use hyprctl dispatch.
-local scratchpad_send =
-  [[hyprctl dispatch 'hl.dsp.window.move({ workspace = "special:scratchpad", follow = false })']]
+-- hyprbars focuses this window, then spawn()s the action through a shell.
+-- The helper records the workspace before the move. A bare path was not
+-- reliable from that spawn, so this goes through hyprctl like close and maximize.
+local scratchpad_send = "hyprctl dispatch "
+  .. shell_single_quote("hl.dsp.exec_cmd(" .. lua_quote(minimize_bin) .. ")")
 
 hl.permission({
   binary = "/usr/(bin|local/bin)/hyprpm",
@@ -148,14 +157,12 @@ hl.permission({
   mode = "allow",
 })
 
+-- Border grab is global. Size and rounding stay on the floating chrome rules
+-- so tiled windows keep the Omarchy theme border.
 hl.config({
   general = {
     resize_on_border = true,
     extend_border_grab_area = 12,
-    border_size = 4,
-  },
-  decoration = {
-    rounding = 6,
   },
 })
 
@@ -218,37 +225,49 @@ if hl.plugin.hyprbars ~= nil then
   chrome_rules = {
     light_focus = hl.window_rule({
       name = "omawin-chrome-light-focus",
-      match = { focus = true },
+      match = { focus = true, float = true },
       ["hyprbars:bar_color"] = chrome_light.bar_active,
       ["hyprbars:title_color"] = chrome_light.title_active,
       border_color = chrome_light.border_active,
       border_size = 4,
+      rounding = 6,
     }),
     light_blur = hl.window_rule({
       name = "omawin-chrome-light-blur",
-      match = { focus = false },
+      match = { focus = false, float = true },
       ["hyprbars:bar_color"] = chrome_light.bar_inactive,
       ["hyprbars:title_color"] = chrome_light.title_inactive,
       border_color = chrome_light.border_inactive,
       border_size = 4,
+      rounding = 6,
     }),
     dark_focus = hl.window_rule({
       name = "omawin-chrome-dark-focus",
-      match = { focus = true },
+      match = { focus = true, float = true },
       ["hyprbars:bar_color"] = chrome_dark.bar_active,
       ["hyprbars:title_color"] = chrome_dark.title_active,
       border_color = chrome_dark.border_active,
       border_size = 4,
+      rounding = 6,
     }),
     dark_blur = hl.window_rule({
       name = "omawin-chrome-dark-blur",
-      match = { focus = false },
+      match = { focus = false, float = true },
       ["hyprbars:bar_color"] = chrome_dark.bar_inactive,
       ["hyprbars:title_color"] = chrome_dark.title_inactive,
       border_color = chrome_dark.border_inactive,
       border_size = 4,
+      rounding = 6,
     }),
   }
+
+  -- Tiled windows keep Omarchy's border-only look. `float` is re-checked when
+  -- it changes, and the tag poke makes hyprbars re-read the rule.
+  hl.window_rule({
+    name = "omawin-tiled-nobar",
+    match = { float = false },
+    ["hyprbars:no_bar"] = "1",
+  })
 
   -- CSD apps already draw a caption. hyprbars on top of that is a second bar
   -- that sits as an overlay on the toolkit header (obvious with two windows).
@@ -402,9 +421,9 @@ o.bind("SUPER + F", "Full screen", function()
 end)
 
 -- SUPER + M was unbound. The title-bar – and Super+M send the window to
--- Omarchy's scratchpad (same destination as Super+Alt+S). Super+S / the bar S
--- toggles it back into view.
-o.bind("SUPER + M", "Send window to scratchpad", hl.dsp.window.move({ workspace = "special:scratchpad", follow = false }))
+-- Omarchy's scratchpad and remember its workspace. Super+S / the bar S
+-- toggles the scratchpad. Super+Shift+M restores the last window.
+o.bind("SUPER + M", "Send window to scratchpad", shell_single_quote(minimize_bin))
 
 -- SUPER + SHIFT + M was Omarchy Music (Spotify).
 hl.unbind("SUPER + SHIFT + M")

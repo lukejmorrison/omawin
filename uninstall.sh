@@ -93,6 +93,10 @@ fi
 
 rm -f "$COLORS"
 rm -f "$LOCAL_BIN/omawin-minimize" "$LOCAL_BIN/omawin-theme-colors"
+rm -f "$LOCAL_BIN/omawin-ensure-hyprbars"
+LIB_DIR="${HOME}/.local/lib/omawin"
+rm -f "$LIB_DIR/hyprbars_abi.py" "$LIB_DIR/hyprpm_status.py"
+rmdir "$LIB_DIR" >/dev/null 2>&1 || true
 rm -f "$HOOKS_DIR/theme-set.d/omawin-titlebar"
 rm -f "$HOOKS_DIR/post-update.d/omawin-hyprbars-update"
 

@@ -10,11 +10,7 @@ if ! command -v meson >/dev/null 2>&1 || ! command -v ninja >/dev/null 2>&1; the
   omarchy pkg add meson ninja || status=1
 fi
 
-if (( status == 0 )); then
-  echo "Updating Hyprland plugin headers (sudo; first time can take several minutes)…"
-  hyprpm update || status=1
-fi
-
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 if (( status == 0 )); then
   if ! hyprpm list 2>/dev/null | grep -q "Repository hyprland-plugins"; then
     echo "Adding hyprwm/hyprland-plugins (first build can take several minutes)…"
@@ -23,9 +19,7 @@ if (( status == 0 )); then
 fi
 
 if (( status == 0 )); then
-  hyprpm enable hyprbars || status=1
-  hyprpm reload -n || true
-  hyprctl reload || true
+  "$ROOT/lib/ensure-hyprbars.sh" || status=1
 fi
 
 echo
@@ -36,7 +30,7 @@ echo "=== hyprctl configerrors ==="
 hyprctl configerrors || true
 echo
 if (( status == 0 )); then
-  echo "If hyprbars is listed above, log out of Omarchy and sign in once."
+  echo "hyprbars is loaded. Super+T floats a window and shows the title bar."
 else
   echo "hyprbars did not finish installing. Fix the error above and re-run:"
   echo "  $0"
